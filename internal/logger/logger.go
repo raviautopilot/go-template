@@ -8,11 +8,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Log is the global logger instance.
-var Log *zap.Logger
-
-// InitLogger initializes a global Zap logger configured for production or development.
-func InitLogger(levelStr string, environment string) error {
+// InitLogger initializes a Zap logger configured for production or development.
+func InitLogger(levelStr string, environment string) (*zap.Logger, error) {
 	var level zapcore.Level
 	if err := level.UnmarshalText([]byte(levelStr)); err != nil {
 		level = zap.InfoLevel
@@ -30,18 +27,19 @@ func InitLogger(levelStr string, environment string) error {
 
 	config.Level = zap.NewAtomicLevelAt(level)
 
-	var err error
-	Log, err = config.Build(zap.AddCallerSkip(1))
+	log, err := config.Build(zap.AddCallerSkip(1))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	zap.ReplaceGlobals(Log)
-	return nil
+	// Also replace globals so that library logs (like standard library log redirection)
+	// still use our logger configuration.
+	zap.ReplaceGlobals(log)
+	return log, nil
 }
 
 // GinZap returns a gin.HandlerFunc (middleware) that logs requests using Zap.
-func GinZap() gin.HandlerFunc {
+func GinZap(log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
@@ -53,10 +51,10 @@ func GinZap() gin.HandlerFunc {
 
 		if len(c.Errors) > 0 {
 			for _, e := range c.Errors.Errors() {
-				Log.Error(e)
+				log.Error(e)
 			}
 		} else {
-			Log.Info(path,
+			log.Info(path,
 				zap.Int("status", c.Writer.Status()),
 				zap.String("method", c.Request.Method),
 				zap.String("path", path),
@@ -70,11 +68,11 @@ func GinZap() gin.HandlerFunc {
 }
 
 // GinRecovery returns a gin.HandlerFunc recovery middleware that logs panics via Zap.
-func GinRecovery() gin.HandlerFunc {
+func GinRecovery(log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				Log.Error("recovery from panic",
+				log.Error("recovery from panic",
 					zap.Any("error", err),
 				)
 				c.AbortWithStatusJSON(500, gin.H{
