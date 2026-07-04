@@ -27,7 +27,6 @@ build() {
     echo "=== Generating Swagger Documentation ==="
 
     # Generate swagger docs, filtering out known runtime warnings
-    # The warning about mProfCycleWrap is a known swag bug and harmless
     swag init --dir cmd/api --output docs --parseDependency --parseInternal 2>&1 | \
         grep -v "failed to evaluate const mProfCycleWrap" || true
 
@@ -58,11 +57,11 @@ start() {
     echo "=== Starting Application ==="
     # Start binary in the background and redirect output to app.log
     nohup "$BINARY_PATH" >> "$LOG_FILE" 2>&1 &
-    
+
     # Capture the PID of the last background command
     local new_pid=$!
     echo "$new_pid" > "$PID_FILE"
-    
+
     # Sleep slightly to let the process spin up, then verify it is running
     sleep 1
     if kill -0 "$new_pid" 2>/dev/null; then
@@ -85,7 +84,7 @@ stop() {
 
     echo "=== Stopping Application Gracefully (SIGTERM) ==="
     kill -15 "$pid"
-    
+
     # Wait for the process to exit (up to 10 seconds)
     local count=0
     while kill -0 "$pid" 2>/dev/null; do
@@ -124,6 +123,40 @@ status() {
     else
         echo "Application is STOPPED."
     fi
+}
+
+# NEW: View logs
+logs() {
+    if [ ! -f "$LOG_FILE" ]; then
+        echo "Log file $LOG_FILE does not exist yet."
+        echo "Start the application first with: ./manage.sh start"
+        exit 1
+    fi
+
+    # Check if we should follow logs or just show tail
+    if [ "$1" = "-f" ] || [ "$1" = "--follow" ]; then
+        echo "=== Following logs (press Ctrl+C to stop) ==="
+        tail -f "$LOG_FILE"
+    elif [ -n "$1" ] && [ "$1" -gt 0 ] 2>/dev/null; then
+        # Show specific number of lines
+        echo "=== Last $1 lines of logs ==="
+        tail -n "$1" "$LOG_FILE"
+    else
+        # Default: show last 50 lines
+        echo "=== Last 50 lines of logs (use './manage.sh logs -f' to follow) ==="
+        tail -n 50 "$LOG_FILE"
+    fi
+}
+
+# NEW: Show error logs only
+errors() {
+    if [ ! -f "$LOG_FILE" ]; then
+        echo "Log file $LOG_FILE does not exist yet."
+        exit 1
+    fi
+
+    echo "=== Error logs (filtering ERROR, FATAL, PANIC) ==="
+    grep -i -E "error|fatal|panic" "$LOG_FILE" || echo "No errors found in logs."
 }
 
 clean() {
@@ -167,12 +200,25 @@ troubleshoot() {
 }
 
 print_usage() {
-    echo "Usage: $0 {build|start|stop|kill|status|clean|troubleshoot}"
+    echo "Usage: $0 {build|start|stop|kill|status|logs|errors|clean|troubleshoot}"
+    echo ""
+    echo "Commands:"
+    echo "  build          - Build the application"
+    echo "  start          - Start the application"
+    echo "  stop           - Stop the application gracefully"
+    echo "  kill           - Force kill the application"
+    echo "  status         - Check application status"
+    echo "  logs           - View application logs"
+    echo "  logs -f        - Follow logs in real-time"
+    echo "  logs 100       - Show last 100 lines"
+    echo "  errors         - Show only error logs"
+    echo "  clean          - Clean generated files"
+    echo "  troubleshoot   - Troubleshoot application issues"
     exit 1
 }
 
 # Check argument count
-if [ $# -ne 1 ]; then
+if [ $# -lt 1 ]; then
     print_usage
 fi
 
@@ -191,6 +237,13 @@ case "$1" in
         ;;
     status)
         status
+        ;;
+    logs)
+        shift  # Remove 'logs' from arguments
+        logs "$@"  # Pass remaining arguments to logs function
+        ;;
+    errors)
+        errors
         ;;
     clean)
         clean
