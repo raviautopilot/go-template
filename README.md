@@ -1,3 +1,3 @@
 ## Architecture
 
-![Dependency Injection Flow](diagrams/architecture.svg)
+![Dependency Injection Flow](diagrarms/architecture.svg)
