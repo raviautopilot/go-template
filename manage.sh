@@ -27,7 +27,7 @@ build() {
     echo "=== Generating Swagger Documentation ==="
 
     # Generate swagger docs, filtering out known runtime warnings
-    swag init --dir cmd/api --output docs --parseDependency --parseInternal 2>&1 | \
+    swag init --dir cmd/api,internal/handler --output docs --parseDependency --parseInternal 2>&1 | \
         grep -v "failed to evaluate const mProfCycleWrap" || true
 
     echo "=== Compiling Go Binary ==="
