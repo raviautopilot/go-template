@@ -1,0 +1,2 @@
+# Generate SVG
+plantuml -tsvg user-docs/diagrarms/architecture.puml
