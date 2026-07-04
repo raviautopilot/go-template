@@ -94,7 +94,7 @@ func initRouter(cfg *config.Config, log *zap.Logger, healthHandler *handler.Heal
 // runServerWithGracefulShutdown starts the server and handles graceful shutdown
 func runServerWithGracefulShutdown(cfg *config.Config, log *zap.Logger, handler http.Handler) {
 	srv := &http.Server{
-		Addr:    ":" + cfg.Server.Port,
+		Addr:    cfg.Server.Host + ":" + cfg.Server.Port,
 		Handler: handler,
 	}
 

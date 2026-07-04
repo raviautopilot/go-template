@@ -6,7 +6,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 
-	_ "github.com/raviautopilot/go-template/docs"
+	"github.com/raviautopilot/go-template/docs"
 	"github.com/raviautopilot/go-template/internal/config"
 	"github.com/raviautopilot/go-template/internal/handler"
 	"github.com/raviautopilot/go-template/internal/logger"
@@ -14,6 +14,12 @@ import (
 
 // NewRouter initializes Gin engine with middlewares and routes.
 func NewRouter(cfg *config.Config, log *zap.Logger, healthHandler *handler.HealthHandler) *gin.Engine {
+	if cfg.Server.Host == "0.0.0.0" {
+		docs.SwaggerInfo.Host = ""
+	} else {
+		docs.SwaggerInfo.Host = cfg.Server.Host + ":" + cfg.Server.Port
+	}
+
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
