@@ -20,7 +20,7 @@ type Config struct {
 // LoadConfig loads configuration from config.yaml and environment variables.
 func LoadConfig() (*Config, error) {
 	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
+	viper.SetConfigType("json")
 	viper.AddConfigPath(".")
 
 	// Support environment variables
