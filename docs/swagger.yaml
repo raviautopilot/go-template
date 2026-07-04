@@ -1,14 +1,4 @@
 basePath: /
-definitions:
-  handler.HealthResponse:
-    properties:
-      status:
-        example: UP
-        type: string
-      timestamp:
-        example: "2026-07-04T01:07:40+05:30"
-        type: string
-    type: object
 host: localhost:8080
 info:
   contact:
@@ -22,18 +12,5 @@ info:
   termsOfService: http://swagger.io/terms/
   title: Go Microservice Boilerplate API
   version: "1.0"
-paths:
-  /health:
-    get:
-      description: Get the health status of the microservice
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handler.HealthResponse'
-      summary: Health Check
-      tags:
-      - System
+paths: {}
 swagger: "2.0"

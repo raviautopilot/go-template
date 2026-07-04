@@ -34,21 +34,11 @@ import (
 // @BasePath  /
 func main() {
 	// 1. Load Configuration
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		panic("Failed to load configuration: " + err.Error())
-	}
+	cfg := loadConfig()
 
 	// 2. Initialize Zap Logger
-	log, err := logger.InitLogger(cfg.Log.Level, cfg.Environment)
-	if err != nil {
-		panic("Failed to initialize logger: " + err.Error())
-	}
-	defer func() {
-		// Sync is called to flush any buffered log entries.
-		// Ignore any error as syncing can fail on stdout/stderr on some OS/platforms.
-		_ = log.Sync()
-	}()
+	log := initLogger(cfg)
+	defer syncLogger(log)
 
 	log.Info("Starting application",
 		zap.String("environment", cfg.Environment),
@@ -56,16 +46,56 @@ func main() {
 	)
 
 	// 3. Initialize layers (Dependency Injection)
-	healthService := service.NewHealthService(cfg, log)
-	healthHandler := handler.NewHealthHandler(cfg, log, healthService)
+	healthHandler := initDependencies(cfg, log)
 
 	// 4. Configure Gin Router
-	r := router.NewRouter(cfg, log, healthHandler)
+	r := initRouter(cfg, log, healthHandler)
 
 	// 5. Graceful Shutdown Implementation
+	runServerWithGracefulShutdown(cfg, log, r)
+}
+
+// loadConfig loads application configuration
+func loadConfig() *config.Config {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		panic("Failed to load configuration: " + err.Error())
+	}
+	return cfg
+}
+
+// initLogger initializes Zap logger with configuration
+func initLogger(cfg *config.Config) *zap.Logger {
+	log, err := logger.InitLogger(cfg.Log.Level, cfg.Environment)
+	if err != nil {
+		panic("Failed to initialize logger: " + err.Error())
+	}
+	return log
+}
+
+// syncLogger flushes any buffered log entries
+func syncLogger(log *zap.Logger) {
+	// Sync is called to flush any buffered log entries.
+	// Ignore any error as syncing can fail on stdout/stderr on some OS/platforms.
+	_ = log.Sync()
+}
+
+// initDependencies initializes all application layers (Dependency Injection)
+func initDependencies(cfg *config.Config, log *zap.Logger) *handler.HealthHandler {
+	healthService := service.NewHealthService(cfg, log)
+	return handler.NewHealthHandler(cfg, log, healthService)
+}
+
+// initRouter configures and returns the Gin router
+func initRouter(cfg *config.Config, log *zap.Logger, healthHandler *handler.HealthHandler) http.Handler {
+	return router.NewRouter(cfg, log, healthHandler)
+}
+
+// runServerWithGracefulShutdown starts the server and handles graceful shutdown
+func runServerWithGracefulShutdown(cfg *config.Config, log *zap.Logger, handler http.Handler) {
 	srv := &http.Server{
 		Addr:    ":" + cfg.Server.Port,
-		Handler: r,
+		Handler: handler,
 	}
 
 	// Initializing the server in a goroutine so that

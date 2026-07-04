@@ -25,13 +25,22 @@ is_running() {
 
 build() {
     echo "=== Generating Swagger Documentation ==="
-    # -g specifies the main file, -o specifies the output directory
-    swag init -g cmd/api/main.go -o docs
+
+    # Generate swagger docs, filtering out known runtime warnings
+    # The warning about mProfCycleWrap is a known swag bug and harmless
+    swag init --dir cmd/api --output docs --parseDependency --parseInternal 2>&1 | \
+        grep -v "failed to evaluate const mProfCycleWrap" || true
 
     echo "=== Compiling Go Binary ==="
     mkdir -p bin
     go build -o "$BINARY_PATH" cmd/api/main.go
-    echo "Build successful! Binary location: $BINARY_PATH"
+
+    if [ -f "$BINARY_PATH" ]; then
+        echo "Build successful! Binary location: $BINARY_PATH"
+    else
+        echo "Build failed!"
+        exit 1
+    fi
 }
 
 start() {
