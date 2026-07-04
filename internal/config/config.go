@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Server struct {
 		Port string `mapstructure:"port"`
+		Host string `mapstructure:"host"`
 	} `mapstructure:"server"`
 	Log struct {
 		Level string `mapstructure:"level"`
@@ -29,6 +30,7 @@ func LoadConfig() (*Config, error) {
 
 	// Default values
 	viper.SetDefault("server.port", "8080")
+	viper.SetDefault("server.host", "localhost")
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("environment", "development")
 
