@@ -1,0 +1,26 @@
+@startuml
+title Dependency Injection Flow
+
+package "main.go" {
+  [Config] as C
+  [Logger] as L
+  [Database] as DB
+  [Repository] as R
+  [Service] as S
+  [Handler] as H
+  [Gin Router] as GR
+
+  C --> DB
+  L --> R
+  L --> S
+  L --> H
+  DB --> R
+  R --> S
+  S --> H
+  H --> GR
+}
+
+note right of R : Inject DB
+note right of S : Inject Repo+Logger
+note right of H : Inject Service
+@enduml
