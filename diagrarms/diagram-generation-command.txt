@@ -1,2 +1,0 @@
-# Generate SVG
-plantuml -tsvg diagrams/architecture.puml
