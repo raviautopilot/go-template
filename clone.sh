@@ -52,11 +52,18 @@ main() {
         exit 1
     fi
 
-    # 2. Prompt for Target Directory
+    # 2. Get Target Directory from argument or prompt
     local target_dir_input=""
-    echo -e "${BOLD}1. Target Directory${NC}"
-    echo -e "   Where should the new project be copied?"
-    read -rp "   Path (e.g. ~/code/my-service or ../my-service): " target_dir_input
+
+    # Check if target directory was passed as argument
+    if [ $# -gt 0 ] && [ -n "$1" ]; then
+        target_dir_input="$1"
+        echo -e "${BLUE}ℹ Using target directory from argument: $target_dir_input${NC}"
+    else
+        echo -e "${BOLD}1. Target Directory${NC}"
+        echo -e "   Where should the new project be copied?"
+        read -rp "   Path (e.g. ~/code/my-service or ../my-service): " target_dir_input
+    fi
 
     if [ -z "$target_dir_input" ]; then
         echo -e "${RED}✘ Error: Target directory cannot be empty.${NC}"
