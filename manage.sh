@@ -23,8 +23,141 @@ is_running() {
     return 1
 }
 
+# Check and fix go.work issues
+setup_workspace() {
+    local action="${1:-check}"
+
+    # Check if we're in a workspace
+    if [ -f "go.work" ]; then
+        echo "🔍 Detected go.work file"
+
+        # Check if the workspace references exist
+        local has_error=false
+        local missing_paths=""
+
+        # Extract workspace paths from go.work
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*use[[:space:]]+(.+)$ ]]; then
+                local workspace_path="${BASH_REMATCH[1]}"
+                # Remove quotes if present
+                workspace_path="${workspace_path//\"/}"
+
+                # Check if the path exists
+                if [ ! -d "$workspace_path" ]; then
+                    has_error=true
+                    missing_paths="$missing_paths\n   - $workspace_path (missing)"
+                fi
+            fi
+        done < <(grep -E "^[[:space:]]*use[[:space:]]+" go.work 2>/dev/null || true)
+
+        if [ "$has_error" = true ]; then
+            echo "⚠ Warning: Some workspace paths are missing:$missing_paths"
+
+            if [ "$action" = "fix" ] || [ "$action" = "build" ]; then
+                echo "🔧 Attempting to fix go.work..."
+
+                # Create backup of original go.work
+                cp go.work go.work.backup
+
+                # Option 1: Try to find the correct paths
+                # Check if there's a go.mod in parent directories
+                local parent_mod=""
+                local current_dir="$(pwd)"
+                while [ "$current_dir" != "/" ]; do
+                    current_dir="$(dirname "$current_dir")"
+                    if [ -f "$current_dir/go.mod" ]; then
+                        parent_mod="$current_dir"
+                        break
+                    fi
+                done
+
+                if [ -n "$parent_mod" ]; then
+                    echo "   Found parent go.mod at: $parent_mod"
+                    # Update go.work to use correct relative path
+                    local rel_path="$(realpath --relative-to="$(pwd)" "$parent_mod")"
+                    echo "   Updating workspace to use: $rel_path"
+
+                    # Create new go.work with correct path
+                    cat > go.work << EOF
+go $(go version | awk '{print $3}' | sed 's/go//')
+
+use (
+    .
+    $rel_path
+)
+EOF
+                    echo "✅ go.work updated successfully"
+                else
+                    # Option 2: If no parent mod found, use standalone mode
+                    echo "   No parent go.mod found. Removing go.work for standalone build..."
+                    rm -f go.work go.work.sum
+                    echo "✅ Removed go.work - building as standalone module"
+                fi
+            fi
+        else
+            echo "✅ go.work workspace is valid"
+        fi
+    else
+        # No go.work - check if we should create one
+        if [ "$action" = "setup" ] || [ "$action" = "build" ]; then
+            # Check if this is part of a workspace structure
+            local current_dir="$(pwd)"
+            local found_workspace=false
+
+            # Look for go.work in parent directories
+            while [ "$current_dir" != "/" ]; do
+                current_dir="$(dirname "$current_dir")"
+                if [ -f "$current_dir/go.work" ]; then
+                    echo "🔍 Found parent go.work at: $current_dir"
+                    found_workspace=true
+                    break
+                fi
+            done
+
+            if [ "$found_workspace" = false ]; then
+                # Check if there's a go.mod in parent that might need workspace
+                local parent_dir="$(pwd)"
+                local has_parent_mod=false
+                while [ "$parent_dir" != "/" ]; do
+                    parent_dir="$(dirname "$parent_dir")"
+                    if [ -f "$parent_dir/go.mod" ] && [ "$parent_dir" != "$(pwd)" ]; then
+                        has_parent_mod=true
+                        local rel_path="$(realpath --relative-to="$(pwd)" "$parent_dir")"
+                        break
+                    fi
+                done
+
+                if [ "$has_parent_mod" = true ]; then
+                    echo "📦 Found parent go.mod at: $parent_dir"
+                    echo "   Creating go.work workspace..."
+                    cat > go.work << EOF
+go $(go version | awk '{print $3}' | sed 's/go//')
+
+use (
+    .
+    $rel_path
+)
+EOF
+                    echo "✅ Created go.work workspace"
+                fi
+            fi
+        fi
+    fi
+}
+
+# Clean workspace files (part of the cleanup process)
+clean_workspace() {
+    if [ -f "go.work" ]; then
+        echo "🧹 Removing go.work files..."
+        rm -f go.work go.work.sum
+    fi
+}
+
 build() {
     echo "=== Generating Swagger Documentation ==="
+
+    # Setup workspace before building
+    setup_workspace "build"
 
     # Generate swagger docs, filtering out known runtime warnings
     swag init --dir cmd/api,internal/handler --output docs --parseDependency --parseInternal 2>&1 | \
@@ -166,10 +299,58 @@ clean() {
         stop
     fi
     rm -rf bin/ docs/ "$PID_FILE" "$LOG_FILE"
+
+    # Ask about go.work cleanup
+    if [ -f "go.work" ]; then
+        echo ""
+        echo "ℹ  go.work file detected."
+        read -rp "   Remove go.work files? [y/N]: " remove_work
+        if [[ "$remove_work" =~ ^[Yy]$ ]]; then
+            clean_workspace
+            echo "✅ go.work files removed"
+        else
+            echo "ℹ  Keeping go.work files"
+        fi
+    fi
+
     echo "Cleanup completed."
 }
 
 troubleshoot() {
+    echo "=== Troubleshooting Application ==="
+    echo ""
+
+    echo "=== Workspace Status ==="
+    if [ -f "go.work" ]; then
+        echo "✓ go.work exists"
+        echo "Contents:"
+        cat go.work | sed 's/^/  /'
+
+        echo ""
+        echo "Checking workspace paths..."
+        local has_error=false
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*use[[:space:]]+(.+)$ ]]; then
+                local workspace_path="${BASH_REMATCH[1]}"
+                workspace_path="${workspace_path//\"/}"
+                if [ -d "$workspace_path" ]; then
+                    echo "  ✓ $workspace_path (exists)"
+                else
+                    echo "  ✗ $workspace_path (MISSING)"
+                    has_error=true
+                fi
+            fi
+        done < <(grep -E "^[[:space:]]*use[[:space:]]+" go.work 2>/dev/null || true)
+
+        if [ "$has_error" = true ]; then
+            echo ""
+            echo "⚠ Some workspace paths are missing. Run './manage.sh setup' to fix."
+        fi
+    else
+        echo "✗ No go.work file found"
+    fi
+
+    echo ""
     echo "=== Last 50 Lines of Logs ($LOG_FILE) ==="
     if [ -f "$LOG_FILE" ]; then
         tail -n 50 "$LOG_FILE"
@@ -197,13 +378,52 @@ troubleshoot() {
     else
         echo "Neither 'ss' nor 'netstat' is available on this system."
     fi
+
+    echo ""
+    echo "=== Checking go.mod ==="
+    if [ -f "go.mod" ]; then
+        echo "✓ go.mod exists"
+        echo "Module: $(head -n 1 go.mod)"
+
+        # Check if go.mod has proper module name
+        local module_name=$(head -n 1 go.mod | awk '{print $2}')
+        if [[ "$module_name" == *"go-template"* ]]; then
+            echo "⚠ Module name contains 'go-template' - you might want to update it"
+            echo "   Current: $module_name"
+        fi
+    else
+        echo "✗ go.mod not found!"
+    fi
+
+    echo ""
+    echo "=== Recommended Fixes ==="
+    if [ -f "go.work" ]; then
+        if grep -q "rlib" go.work 2>/dev/null; then
+            echo "1. Run './manage.sh setup' to fix workspace paths"
+        fi
+    fi
+    echo "2. If issues persist, run './manage.sh clean' to reset"
+}
+
+# New: Setup workspace
+setup() {
+    echo "=== Setting Up Workspace ==="
+    setup_workspace "setup"
+
+    # Run go mod tidy to ensure dependencies are fresh
+    if [ -f "go.mod" ]; then
+        echo "📦 Running go mod tidy..."
+        go mod tidy
+    fi
+
+    echo "✅ Workspace setup complete"
 }
 
 print_usage() {
-    echo "Usage: $0 {build|start|stop|kill|status|logs|errors|clean|troubleshoot}"
+    echo "Usage: $0 {build|start|stop|kill|status|logs|errors|clean|setup|troubleshoot}"
     echo ""
     echo "Commands:"
-    echo "  build          - Build the application"
+    echo "  build          - Build the application (auto-fixes workspace)"
     echo "  start          - Start the application"
     echo "  stop           - Stop the application gracefully"
     echo "  kill           - Force kill the application"
@@ -212,7 +432,8 @@ print_usage() {
     echo "  logs -f        - Follow logs in real-time"
     echo "  logs 100       - Show last 100 lines"
     echo "  errors         - Show only error logs"
-    echo "  clean          - Clean generated files"
+    echo "  clean          - Clean generated files (asks about go.work)"
+    echo "  setup          - Setup/fix go.work workspace"
     echo "  troubleshoot   - Troubleshoot application issues"
     exit 1
 }
@@ -247,6 +468,9 @@ case "$1" in
         ;;
     clean)
         clean
+        ;;
+    setup)
+        setup
         ;;
     troubleshoot)
         troubleshoot
